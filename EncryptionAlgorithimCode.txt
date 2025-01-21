@@ -1,0 +1,410 @@
+package seleencdec;
+
+import java.util.Scanner;
+
+public class Seleencdec {
+    private static final int KEY_SIZE = 128; // Encryption key size in bits
+    private static String fixedKey; // Fixed key for encryption and decryption
+
+    public static void main(String[] args) {
+        Scanner console = new Scanner(System.in);
+
+        // Get plaintext input
+        System.out.println("Enter plaintext (hexadecimal, 16 characters):");
+        String plainText = console.nextLine().toUpperCase();
+
+        // Input validation for plaintext
+        if (!plainText.matches("[0-9A-Fa-f]+") || plainText.length() != 16) {
+            System.out.println("Invalid input! Please enter a 16-character hexadecimal string.");
+            return;
+        }
+
+        // Get key input
+        System.out.println("Enter encryption key (binary, " + KEY_SIZE + " bits):");
+        String userKey = console.nextLine();
+
+        // Input validation for key
+        if (!isValidKey(userKey)) {
+            System.out.println("Invalid key! Please enter a " + KEY_SIZE + "-bit binary string (only 0s and 1s).");
+            return;
+        }
+
+        fixedKey = userKey;
+        System.out.println("\nOriginal Plain Text: " + plainText);
+        System.out.println("Using Key: " + fixedKey);
+
+        // Encryption process
+        String encrypted = encrypt(plainText);
+        System.out.println("\nFinal Encrypted Text: " + encrypted);
+
+        // Decryption process
+        String decrypted = decrypt(encrypted);
+        System.out.println("\nDecrypted Text: " + decrypted);
+
+        // Validate decryption
+        if (plainText.equals(decrypted)) {
+            System.out.println("\nDecryption successful: Plaintext matches decrypted text!");
+        } else {
+            System.out.println("\nDecryption failed: Plaintext does not match decrypted text.");
+        }
+
+        console.close();
+    }
+
+    // Validate the user-provided key
+    private static boolean isValidKey(String key) {
+        return key != null && 
+               key.length() == KEY_SIZE && 
+               key.matches("[01]+"); // Only allows 0s and 1s
+    }
+
+    public static String encrypt(String plainText) {
+        System.out.println("\n--- Encryption Process ---");
+
+        String binaryText = hexToBinary(plainText);
+
+        // Expansion
+        String expanded = expand(binaryText);
+        logBinaryStep("Expansion", binaryText, expanded);
+
+        // Permutation
+        String permuted = permute(expanded);
+        logBinaryStep("Permutation", expanded, permuted);
+
+        // XOR with Key
+        String xored = xorOperation(permuted, fixedKey);
+        logBinaryStep("XOR with Key", permuted, xored);
+
+        // Substitution
+        String substituted = substitute(xored);
+        logBinaryStep("Substitution", xored, substituted);
+
+        return binaryToHex(substituted);
+    }
+private static String inversePermute(String binary) {
+        // Ensure input length is 96 bits
+        if (binary.length() != 96) {
+            throw new IllegalArgumentException("Input must be 96 bits for inverse permutation");
+        }
+
+        // Split into 4 parts
+        String[] parts = new String[4];
+        int partSize = 24;
+        for (int i = 0; i < 4; i++) {
+            parts[i] = binary.substring(i * partSize, (i + 1) * partSize);
+        }
+
+        // Create new parts
+        String[] newParts = new String[4];
+        for (int i = 0; i < 4; i++) {
+            StringBuilder newPart = new StringBuilder();
+            
+            // Process 4 bits at a time
+            for (int j = 0; j < 24; j += 4) {
+                for (int k = 0; k < 4; k++) {
+                    newPart.append(parts[k].charAt((j / 4) * 4 + i));
+                }
+            }
+            
+            newParts[i] = newPart.toString();
+        }
+
+        // Combine all parts
+        StringBuilder result = new StringBuilder();
+        for (String part : newParts) {
+            result.append(part);
+        }
+
+        return result.toString();
+    }
+    public static String decrypt(String cipherText) {
+        System.out.println("\n--- Decryption Process ---");
+
+        String binary = hexToBinary(cipherText);
+
+        // Inverse Substitution
+        String inverseSubstituted = inverseSubstitute(binary);
+        logBinaryStep("Inverse Substitution", binary, inverseSubstituted);
+
+        // XOR with Key
+        String xored = xorOperation(inverseSubstituted, fixedKey);
+        logBinaryStep("XOR with Key", inverseSubstituted, xored);
+
+        // Inverse Permutation
+        String inversePermuted = inversePermute(xored);
+        logBinaryStep("Inverse Permutation", xored, inversePermuted);
+
+        // Compression
+        String compressed = compress(inversePermuted);
+        logBinaryStep("Compression", inversePermuted, compressed);
+
+        return binaryToHex(compressed);
+    }
+
+    // Duplicate each bit for expansion
+   private static String expand(String binary) {
+        // Convert binary to 4-bit groups for easier processing
+        String[] fourBitGroups = new String[binary.length() / 4];
+        for (int i = 0; i < binary.length(); i += 4) {
+            fourBitGroups[i / 4] = binary.substring(i, i + 4);
+        }
+        
+        StringBuilder expanded = new StringBuilder();
+        
+        for (int i = 0; i < fourBitGroups.length; i++) {
+            String current = fourBitGroups[i];
+            int step = (i / 4) + 1; // Increment step size every 4 characters
+            
+            // Get next and previous groups considering wrap-around
+            String[] nextGroups = new String[step];
+            String[] prevGroups = new String[step];
+            
+            for (int j = 0; j < step; j++) {
+                int nextIndex = (i + j + 1) % fourBitGroups.length;
+                int prevIndex = (i - j - 1 + fourBitGroups.length) % fourBitGroups.length;
+                nextGroups[j] = fourBitGroups[nextIndex];
+                prevGroups[j] = fourBitGroups[prevIndex];
+            }
+            
+            // Build 6-bit result
+            StringBuilder sixBitGroup = new StringBuilder(current);
+            
+            // Add first bits from next groups
+            for (String next : nextGroups) {
+                sixBitGroup.append(next.charAt(0));
+            }
+            
+            // Add first bits from previous groups
+            for (String prev : prevGroups) {
+                sixBitGroup.append(prev.charAt(0));
+            }
+            
+            // Ensure exactly 6 bits by truncating or padding
+            String sixBits = sixBitGroup.toString();
+            if (sixBits.length() > 6) {
+                sixBits = sixBits.substring(0, 6);
+            } else while (sixBits.length() < 6) {
+                sixBits += "0";
+            }
+            
+            expanded.append(sixBits);
+        }
+        
+        return expanded.toString();
+    }
+
+    // Compress by taking the first bit of each pair
+     private static String compress(String expanded) {
+        StringBuilder compressed = new StringBuilder();
+        
+        // Process each 6-bit group
+        for (int i = 0; i < expanded.length(); i += 6) {
+            // Take only the first 4 bits from each 6-bit group
+            String sixBitGroup = expanded.substring(i, Math.min(i + 6, expanded.length()));
+            compressed.append(sixBitGroup.substring(0, 4));
+        }
+        
+        return compressed.toString();
+    }
+
+    
+
+    // Reverse the binary string for inverse permutation
+     private static String permute(String binary) {
+        // Ensure input length is 96 bits
+        if (binary.length() != 96) {
+            throw new IllegalArgumentException("Input must be 96 bits for permutation");
+        }
+
+        // Split into 4 parts of 24 bits each
+        String[] parts = new String[4];
+        int partSize = 24;
+        for (int i = 0; i < 4; i++) {
+            parts[i] = binary.substring(i * partSize, (i + 1) * partSize);
+        }
+
+        // Create new parts
+        String[] newParts = new String[4];
+        for (int i = 0; i < 4; i++) {
+            StringBuilder newPart = new StringBuilder();
+            
+            // Process 4 bits at a time
+            for (int j = 0; j < 24; j += 4) {
+                for (int k = 0; k < 4; k++) {
+                    newPart.append(parts[k].charAt(j + (i % 4)));
+                }
+            }
+            
+            newParts[i] = newPart.toString();
+        }
+
+        // Combine all parts
+        StringBuilder result = new StringBuilder();
+        for (String part : newParts) {
+            result.append(part);
+        }
+
+        return result.toString();
+    }
+
+    // XOR two binary strings
+    private static String xorOperation(String binary1, String binary2) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < binary1.length(); i++) {
+            result.append(binary1.charAt(i) == binary2.charAt(i) ? "0" : "1");
+        }
+        return result.toString();
+    }
+
+    // Rotate the binary string left by 1 bit
+    private static String substitute(String binary) {
+    StringBuilder result = new StringBuilder();
+    
+    System.out.println("\n=== Starting Forward Substitution Process ===");
+    
+    // Process in 6-bit groups
+    for (int i = 0; i < binary.length(); i += 6) {
+        // Extract 6-bit group
+        String group = binary.substring(i, Math.min(i + 6, binary.length()));
+        
+        // Ensure we have 6 bits by padding if necessary
+        while (group.length() < 6) {
+            group += "0";
+        }
+        
+        // Split into 4-bit prefix and 2-bit suffix
+        String prefix = group.substring(0, 4);
+        String suffix = group.substring(4);
+        
+        // Convert prefix to hex value (0-15)
+        int prefixValue = Integer.parseInt(prefix, 2);
+        
+        // Convert suffix to decimal (0-3)
+        int suffixValue = Integer.parseInt(suffix, 2);
+        
+        // Shift prefix value forward by suffix value
+        int shiftedValue = (prefixValue + suffixValue) % 16;
+        
+        // Convert suffix to 4-bit binary
+        String suffixBinary = String.format("%4s", Integer.toBinaryString(suffixValue))
+                                  .replace(' ', '0');
+        
+        // Convert shifted value to 4-bit binary
+        String shiftedBinary = String.format("%4s", Integer.toBinaryString(shiftedValue))
+                                   .replace(' ', '0');
+        
+        // XOR shifted value with suffix binary
+        StringBuilder xorResult = new StringBuilder();
+        for (int j = 0; j < 4; j++) {
+            xorResult.append(shiftedBinary.charAt(j) == suffixBinary.charAt(j) ? '0' : '1');
+        }
+        
+        // Log the substitution steps for this group
+        logSubstitutionSteps(group, prefix, suffix, prefixValue, suffixValue, shiftedValue, xorResult.toString());
+        
+        // Combine results
+        result.append(xorResult.toString())
+              .append(suffix);
+    }
+    
+    System.out.println("\n=== Forward Substitution Process Complete ===");
+    return result.toString();
+}
+
+    // Rotate the binary string right by 1 bit
+    // Update inverse substitution accordingly
+private static String inverseSubstitute(String binary) {
+    StringBuilder result = new StringBuilder();
+    
+    System.out.println("\n=== Starting Inverse Substitution Process ===");
+    
+    // Process in 6-bit groups
+    for (int i = 0; i < binary.length(); i += 6) {
+        // Extract 6-bit group
+        String group = binary.substring(i, Math.min(i + 6, binary.length()));
+        
+        // Ensure we have 6 bits by padding if necessary
+        while (group.length() < 6) {
+            group += "0";
+        }
+        
+        // Split into 4-bit prefix and 2-bit suffix
+        String prefix = group.substring(0, 4);
+        String suffix = group.substring(4);
+        
+        // Convert suffix to decimal (0-3)
+        int suffixValue = Integer.parseInt(suffix, 2);
+        
+        // Convert suffix to 4-bit binary
+        String suffixBinary = String.format("%4s", Integer.toBinaryString(suffixValue))
+                                  .replace(' ', '0');
+        
+        // XOR prefix with suffix binary to get shifted value
+        StringBuilder xorResult = new StringBuilder();
+        for (int j = 0; j < 4; j++) {
+            xorResult.append(prefix.charAt(j) == suffixBinary.charAt(j) ? '0' : '1');
+        }
+        
+        // Convert XOR result to decimal
+        int shiftedValue = Integer.parseInt(xorResult.toString(), 2);
+        
+        // Shift back by suffix value
+        int originalValue = (shiftedValue - suffixValue + 16) % 16;
+        
+        // Convert back to 4-bit binary
+        String originalBinary = String.format("%4s", Integer.toBinaryString(originalValue))
+                                    .replace(' ', '0');
+        
+        // Log the substitution steps for this group
+        logSubstitutionSteps(group, prefix, suffix, originalValue, suffixValue, shiftedValue, originalBinary);
+        
+        // Combine results
+        result.append(originalBinary)
+              .append(suffix);
+    }
+    
+    System.out.println("\n=== Inverse Substitution Process Complete ===");
+    return result.toString();
+}
+
+    // Convert hexadecimal string to binary string
+    private static String hexToBinary(String hex) {
+        StringBuilder binary = new StringBuilder();
+        for (char c : hex.toCharArray()) {
+            String bin = String.format("%4s", Integer.toBinaryString(Integer.parseInt(String.valueOf(c), 16))).replace(' ', '0');
+            binary.append(bin);
+        }
+        return binary.toString();
+    }
+
+    // Convert binary string to hexadecimal string
+    private static String binaryToHex(String binary) {
+        StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < binary.length(); i += 4) {
+            String block = binary.substring(i, i + 4);
+            int decimal = Integer.parseInt(block, 2);
+            hex.append(Integer.toHexString(decimal).toUpperCase());
+        }
+        return hex.toString();
+    }
+
+    // Log transformation of binary data at each step
+    private static void logBinaryStep(String stepName, String before, String after) {
+        System.out.println("\n" + stepName + ":");
+        System.out.println("Before: " + before);
+        System.out.println("After : " + after);
+    }
+    // Helper method to log substitution steps for debugging
+private static void logSubstitutionSteps(String group, String prefix, String suffix, 
+                                       int prefixValue, int suffixValue, int shiftedValue, 
+                                       String xorResult) {
+    System.out.println("\nSubstitution step details for group: " + group);
+    System.out.println("Prefix (4 bits): " + prefix + " (hex: " + 
+                      Integer.toHexString(prefixValue).toUpperCase() + ")");
+    System.out.println("Suffix (2 bits): " + suffix + " (decimal: " + suffixValue + ")");
+    System.out.println("Shifted value: " + Integer.toHexString(shiftedValue).toUpperCase() + 
+                      " (binary: " + String.format("%4s", 
+                      Integer.toBinaryString(shiftedValue)).replace(' ', '0') + ")");
+    System.out.println("Final XOR result: " + xorResult + suffix);
+}
+}
